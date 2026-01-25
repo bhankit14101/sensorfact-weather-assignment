@@ -27,7 +27,6 @@ def ensure_topic_exists():
             admin_client = KafkaAdminClient(
                 bootstrap_servers=KAFKA_BROKER,
                 request_timeout_ms=5000,
-                connection_timeout_ms=5000
             )
             topic_list = [NewTopic(name=TOPIC, num_partitions=3, replication_factor=1)]
             try:

@@ -49,3 +49,4 @@ services:
       KAFKA_BROKER: kafka:29092
       MOCK_MODE: "true"
       PYTHONUNBUFFERED: "1"
+      KAFKA_API_VERSION: "3.7.0"
