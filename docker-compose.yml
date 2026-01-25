@@ -50,3 +50,17 @@ services:
       MOCK_MODE: "true"
       PYTHONUNBUFFERED: "1"
       KAFKA_API_VERSION: "3.7.0"
+
+  processor:
+    build: ./processor
+    container_name: weather-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER: kafka:29092
+      POSTGRES_URL: "jdbc:postgresql://db:5432/weather_db"
+      POSTGRES_USER: sensorfact
+      POSTGRES_PASS: password
