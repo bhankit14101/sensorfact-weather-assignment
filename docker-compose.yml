@@ -38,3 +38,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  ingestor:
+    build: ./ingestor
+    container_name: weather-ingestor
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MOCK_MODE: "true"
+      PYTHONUNBUFFERED: "1"
