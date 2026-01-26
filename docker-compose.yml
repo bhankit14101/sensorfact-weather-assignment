@@ -49,7 +49,7 @@ services:
       KAFKA_BROKER: kafka:29092
       MOCK_MODE: "true"
       PYTHONUNBUFFERED: "1"
-      KAFKA_API_VERSION: "3.7.0"
+    env_file: ingestor.env
 
   processor:
     build: ./processor
@@ -61,6 +61,4 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:29092
-      POSTGRES_URL: "jdbc:postgresql://db:5432/weather_db"
-      POSTGRES_USER: sensorfact
-      POSTGRES_PASS: password
+    env_file: db.env
