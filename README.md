@@ -14,6 +14,15 @@ It does so by aggregating minute-by-minute precipitation forecasts into a single
 
 ## 2. Architecture & Data Flow
 
+```mermaid
+flowchart TB
+    A[OpenWeather OneCall 3.0 API] -->|HTTP / Async| B[Ingestor Service<br/>Python + aiohttp]
+    B -->|JSON Messages| C[(Apache Kafka<br/>Topic: weather_raw)]
+    C -->|Structured Streaming| D[Spark Processor<br/>PySpark Structured Streaming]
+    D -->|JDBC Append| E[(PostgreSQL<br/>precipitation_forecasts)]
+    E -->|SQL View<br/>DISTINCT ON| F[(latest_forecasts)]
+    F -->|Polling each 10s| G[Monitoring Dashboard<br/>Python + psycopg2]
+```
 ### 2.1 The Pipeline Journey
 
 **Ingestion (Async Python)**  
