@@ -137,14 +137,3 @@ docker exec -it weather-db \
   -c "SELECT DISTINCT ON (location_name) location_name, total_next_hour_mm, forecast_window_start FROM precipitation_forecasts ORDER BY location_name, forecast_window_start DESC;"
 ```
 
-## 5. Future Improvements
-
-- CI/CD Integration: Add automated unit tests for Spark transformations using pytest and chispa.
-
-- Schema Registry : Introduce a schema registry to manage JSON schema evolution as the OpenWeather API changes.
-
-- Time-Series Optimization: Migrate to TimescaleDB (Postgres extension) to efficiently manage long-term historical data using hypertables.
-
-- Advanced Windowing: Implement true sliding windows in Spark to model forecast overlap across multiple API polling cycles.
-
-- Dead Letter Queue (DLQ): Route malformed or partial API responses to a dedicated Kafka topic for inspection without disrupting the main pipeline.
