@@ -42,11 +42,11 @@ A terminal-based dashboard queries the “latest state” view every 10 seconds,
 
 ### 2.2 System Timing Logic
 
-| Component     | Frequency | Rationale |
-|---------------|-----------|-----------|
-| Ingestion     | 60s       | Matches OpenWeather structural update cadence |
-| Processing    | 2–5s      | Spark micro-batch latency |
-| Monitoring    | 10s       | Minimizes perceived UI lag |
+| Component     | Frequency | Rationale                             |
+|---------------|-----------|---------------------------------------|
+| Ingestion     | 60s       | Matches OpenWeather structural update |
+| Processing    | 2–5s      | Spark micro-batch latency             |
+| Monitoring    | 10s       | Minimizes perceived UI lag            |
 
 ---
 
@@ -130,7 +130,7 @@ docker exec -it weather-db \
 
 ## 5. Future Improvements
 
--CI/CD Integration: Add automated unit tests for Spark transformations using pytest and chispa.
+- CI/CD Integration: Add automated unit tests for Spark transformations using pytest and chispa.
 
 - Schema Registry : Introduce a schema registry to manage JSON schema evolution as the OpenWeather API changes.
 
