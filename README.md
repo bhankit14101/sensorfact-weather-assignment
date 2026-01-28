@@ -1,73 +1,141 @@
 # Weather Precipitation Stream Processor
 
-## Overview
+## 1. Executive Summary
 
-This application performs real-time processing of minute-by-minute precipitation forecasts. It is designed to scale to thousands of coordinate pairs by utilizing a decoupled microservice architecture.
+This application is a production-grade streaming pipeline designed to ingest, process, and expose real-time precipitation forecasts. Built for **Sensorfact**, the system demonstrates a decoupled architecture that balances the strict constraints of external API rate limits (60 calls/min) with the heavy-lifting requirements of Big Data stream processing (Spark/Kafka).
 
-### Tech Stack
+The system answers the core question:
 
-- Language: Python 3.11
+> **“How much rain will fall in the coming hour at our locations?”**
 
-- Message Queue: Apache Kafka (Scalable, fault-tolerant ingestion)
+It does so by aggregating minute-by-minute precipitation forecasts into a single, actionable metric per location.
 
-- Stream Processing: PySpark (Structured Streaming for windowed aggregations)
+---
 
-- Storage: PostgreSQL (Structured storage for processed results)
+## 2. Architecture & Data Flow
 
-- Orchestration: Docker Compose
+### 2.1 The Pipeline Journey
 
-### Architecture & Design
+**Ingestion (Async Python)**  
+A high-performance `asyncio` service polls the OpenWeatherMap OneCall 3.0 API.  
+It uses staggered scheduling to spread 50+ requests across a 60-second window, avoiding burst-rate limit violations.
 
-- Producer (ingestor/): Simulates a stream by polling the API every minute. It maps each coordinate pair to a Kafka partition to ensure order and scalability.
+**Buffering (Kafka)**  
+Raw JSON API responses are produced to the `weather_raw` Kafka topic.  
+Kafka acts as a durable buffer, providing fault tolerance—if downstream processing fails, data is retained and replayable.
 
-- Kafka: Acts as the buffer. Even if the processor is down, Kafka retains the data (fault tolerance).
+**Transformation (Spark Structured Streaming)**  
+A PySpark Structured Streaming application consumes data from Kafka.  
+It:
+- Parses and validates the JSON payload
+- Explodes the `minutely` forecast array
+- Aggregates `SUM(precipitation)` over the next 60 minutes
 
-- Spark Processor (processor/): Consumes the JSON stream. It performs a sum of the precipitation values within the minutely array.
+**Storage (PostgreSQL)**  
+Processed results are written via JDBC in **append mode**, preserving historical forecast snapshots.  
+A database view using `DISTINCT ON` exposes the **latest forecast per location** for real-time querying.
 
-- Database: Stores the latest "Next Hour Total" for each coordinate.
+**Exposing (Monitoring)**  
+A terminal-based dashboard queries the “latest state” view every 10 seconds, providing low-latency visibility into upcoming precipitation.
 
-### Scalability Strategy
+---
 
-- Horizontal Scaling: Kafka partitions allow multiple consumer instances. Spark can be deployed on a cluster (YARN/Kubernetes) to handle tens of thousands of coordinates.
+### 2.2 System Timing Logic
 
-- Backpressure: Spark Structured Streaming naturally handles spikes in data volume by processing in micro-batches.
+| Component     | Frequency | Rationale |
+|---------------|-----------|-----------|
+| Ingestion     | 60s       | Matches OpenWeather structural update cadence |
+| Processing    | 2–5s      | Spark micro-batch latency |
+| Monitoring    | 10s       | Minimizes perceived UI lag |
 
-## Setup & Execution
+---
+
+## 3. Key Design Considerations
+
+### 3.1 Flexibility & Pragmatism
+
+**Decoupled Services**  
+The ingestion and processing layers are independent. This allows processing logic (e.g., changing aggregation semantics) to evolve without interrupting data collection.
+
+**Schema Enforcement**  
+A strict `StructType` schema is applied in Spark. Invalid or malformed API responses are rejected early, preventing corrupt data from reaching the database.
+
+---
+
+### 3.2 Scalability (The 10k+ Coordinate Strategy)
+
+The architecture is designed to scale well beyond the current ~50 locations:
+
+**Kafka Partitioning**  
+Increasing topic partitions enables parallel consumption across Spark executors.
+
+**Distributed Ingestion**  
+The ingestor can be horizontally sharded. For example, 10 workers polling 1,000 locations each instead of a single monolith polling 10,000.
+
+**Spark on Kubernetes**  
+Although currently deployed via Docker Compose, the Spark job is compatible with Kubernetes for horizontal and elastic scaling.
+
+---
+
+### 3.3 Fault Tolerance
+
+**Checkpointing**  
+Spark maintains checkpoints under `/tmp/checkpoints`. If the processor crashes, it resumes from the last committed Kafka offsets, ensuring no data loss.
+
+**Backpressure Handling**  
+Spark Structured Streaming automatically regulates ingestion rates. Sudden spikes in data volume are handled via controlled micro-batches, preventing memory exhaustion.
+
+---
+
+## 4. Setup & Execution
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- Docker
+- Docker Compose
+- OpenWeatherMap API Key (OneCall 3.0 enabled)
 
-- OpenWeatherMap API Key (A default is provided in the code, but replace if needed)
+---
 
-### Instructions
-
-#  Clone the repository (or unzip).
-
-Build and Start:
+### Launching the Stack
 
 ```bash
+# 1. Provide your API Key
+echo "OPENWEATHER_API_KEY=your_key_here" > ingestor.env
+
+# 2. Build and start all services
 docker-compose up --build
 ```
+### Accessing the Data
 
-View Results:
-The processor writes to the weather_stats table in Postgres. You can check the output:
+#### Live Monitor (Recommended)
 
+The monitor requires the psycopg2-binary package to communicate with the database.
 ```bash
-docker exec -it weather-db psql -U sensorfact -d weather_db -c "SELECT * FROM precipitation_forecasts;"
-```
+# Install dependency
+pip install psycopg2-binary
 
-#### Option B: Live Terminal Monitor (Recommended for Demo)
-Run the provided monitor script locally (requires psycopg2):
-
-```bash
+# Run the monitor
 python monitor.py
+
+```
+#### Direct SQL Access
+
+
+```bash
+docker exec -it weather-db \
+  psql -U sensorfact -d weather_db \
+  -c "SELECT DISTINCT ON (location_name) location_name, total_next_hour_mm, forecast_window_start FROM precipitation_forecasts ORDER BY location_name, forecast_window_start DESC;"
 ```
 
-This script will auto-refresh every 5 seconds, displaying a formatted table of all active coordinate pairs and their forecasted rain volume.
+## 5. Future Improvements
 
-## Development Decisions
+-CI/CD Integration: Add automated unit tests for Spark transformations using pytest and chispa.
 
-- Static Mocking: To prevent hitting the 1,000 call daily limit during testing, the ingestor has a MOCK_MODE environment variable.
+- Schema Registry : Introduce a schema registry to manage JSON schema evolution as the OpenWeather API changes.
 
-- Checkpointing: Spark uses a checkpoint directory to ensure that if the process restarts, it picks up exactly where it left off without losing data.
+- Time-Series Optimization: Migrate to TimescaleDB (Postgres extension) to efficiently manage long-term historical data using hypertables.
+
+- Advanced Windowing: Implement true sliding windows in Spark to model forecast overlap across multiple API polling cycles.
+
+- Dead Letter Queue (DLQ): Route malformed or partial API responses to a dedicated Kafka topic for inspection without disrupting the main pipeline.

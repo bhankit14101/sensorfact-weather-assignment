@@ -47,7 +47,7 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:29092
-      MOCK_MODE: "true"
+      MOCK_MODE: "false"
       PYTHONUNBUFFERED: "1"
     env_file: ingestor.env
 

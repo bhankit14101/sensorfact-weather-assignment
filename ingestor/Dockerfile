@@ -3,7 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-# aiohttp is added to support the asynchronous polling architecture
+# aiohttp to support the asynchronous polling.
+# todo: better pyenv management. Poetry?
 RUN pip install kafka-python aiohttp python-dotenv
 
 # Copy the script and the CSV into the image

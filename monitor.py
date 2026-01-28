@@ -1,55 +1,80 @@
-import os
-import time
 import psycopg2
-from datetime import datetime
+import time
+import os
+import sys
 
-# Database connection details (matching docker-compose)
-DB_CONFIG = {
-    "dbname": "weather_db",
-    "user": "sensorfact",
-    "password": "password",
-    "host": "localhost",
-    "port": "5432"
-}
+# Configuration from environment or defaults
+DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+DB_NAME = os.getenv("POSTGRES_DB", "weather_db")
+DB_USER = os.getenv("POSTGRES_USER", "sensorfact")
+DB_PASS = os.getenv("POSTGRES_PASS", "password")
 
-def monitor():
-    print("Starting Live Weather Monitor...")
-    print("Press Ctrl+C to stop.\n")
+def get_latest_forecasts():
+    """
+    Queries the database for the most recent precipitation forecast for every location.
+    Uses DISTINCT ON to efficiently get exactly one row per location_name.
+    """
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASS,
+            connect_timeout=5
+        )
+        cur = conn.cursor()
 
-    while True:
-        try:
-            conn = psycopg2.connect(**DB_CONFIG)
-            cur = conn.cursor()
+        # Optimized query for real-time state
+        query = """
+        SELECT DISTINCT ON (location_name)
+            location_name,
+            total_next_hour_mm,
+            forecast_window_start,
+            lat,
+            lon
+        FROM precipitation_forecasts
+        ORDER BY location_name, forecast_window_start DESC;
+        """
 
-            # Query the latest results
-            cur.execute("""
-                SELECT location_name, total_next_hour_mm, lat, lon, forecast_window_start 
-                FROM precipitation_forecasts 
-                ORDER BY location_name;
-            """)
-            rows = cur.fetchall()
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        return f"Database Error: {e}"
 
-            # Clear terminal (works on most systems)
-            os.system('cls' if os.name == 'nt' else 'clear')
-
-            print(f"--- SENSORFACT LIVE PRECIPITATION MONITOR ---")
-            print(f"Last Updated: {datetime.now().strftime('%H:%M:%S')}")
-            print("-" * 65)
-            print(f"{'Location':<15} | {'Total (mm)':<12} | {'Coordinates':<18} | {'Forecast Start'}")
-            print("-" * 65)
-
-            for row in rows:
-                loc, val, lat, lon, start = row
-                coord = f"{lat}, {lon}"
-                print(f"{loc:<15} | {val:<12.2f} | {coord:<18} | {start}")
-
-            cur.close()
-            conn.close()
-
-        except Exception as e:
-            print(f"Waiting for database connection... ({e})")
-
-        time.sleep(5) # Refresh every 5 seconds
+def clear_console():
+    """Clears the terminal screen based on the OS."""
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 if __name__ == "__main__":
-    monitor()
+    try:
+        while True:
+            results = get_latest_forecasts()
+            clear_console()
+
+            print("=" * 70)
+            print(f"{'SENSORFACT WEATHER MONITOR (LIVE)':^70}")
+            print("=" * 70)
+            print(f"{'Location':<25} | {'Rain (mm)':<10} | {'Forecast Start (CET)':<20}")
+            print("-" * 70)
+
+            if isinstance(results, str):
+                print(f"\n[!] {results}")
+            elif not results:
+                print("\n[?] No data found yet. Waiting for Spark to process...")
+            else:
+                for row in results:
+                    name, rain, start, lat, lon = row
+                    # Format timestamp to string for clean display
+                    time_str = start.strftime("%H:%M:%S") if hasattr(start, 'strftime') else str(start)
+                    print(f"{name:<25} | {rain:>9.2f} | {time_str:<20}")
+
+            print("-" * 70)
+            print(f"Last updated: {time.strftime('%H:%M:%S')} | Refreshing in 10s...")
+            time.sleep(10)
+
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped by user.")
+        sys.exit(0)
